@@ -142,6 +142,36 @@ The animation helpers use a few tricks:
 
 **Remembered links.** The organizer's browser stores `{ names, codes }` in `localStorage`, so a refresh shows the links again. The draw itself lives only inside the links.
 
+## Step 4: recipient view, where the lootjes are drawn
+
+When the page opens with a `#code`, it decodes the ticket and shows "Hoi Anna!" with a "Trek een lootje!" button. Each tap shakes the sack, a folded paper flies out and lands in its slot, and after a short pause it flips over to show a name. After the last one, pepernoten and confetti rain down. A broken code shows "Oeps!" with a request to ask the organizer for the link again.
+
+**The click sequence** reads like a film script again:
+
+```js
+await shakeSack(3);
+await pullPaper(picks[drawn]); // fly out → pause → flip
+// after the last paper: hide the button, show the outro, rain()
+```
+
+The button is disabled during the animation so a double tap can't pull two papers at once.
+
+**The FLIP technique** (First, Last, Invert, Play) for the flying paper. The paper is added straight into its final slot in the layout, and the page measures where that is. The animation starts offset back at the sack (`translate(dx, dy) scale(0.1)`) and plays towards `transform: "none"`, which is its real spot. The browser's layout decides where the paper ends up, so there's no position to calculate by hand. With reduced motion on, the paper simply appears in place.
+
+**The 3D flip** uses only CSS structure:
+
+- `.paper` has `perspective: 600px`, which sets how deep the 3D looks.
+- `.inner` has `transform-style: preserve-3d`, so its children live in the same 3D space.
+- Both faces have `backface-visibility: hidden`. The back face starts at `rotateY(180deg)`, so it's hidden until `.inner` turns 180°.
+
+The flip is a Web Animation on `.inner`. Afterwards, the class `flipped` sets the same end state in CSS, so the name is also visible when animations are off.
+
+**Pepernoten and confetti.** `rain()` creates 80 small fixed-position elements at the top: brown circles with a radial gradient, or coloured rectangles. Each falls `110vh` with a random drift, spin, speed and delay, and removes itself when its animation's `.finished` resolves. `fill: "backwards"` keeps each one off-screen until its delay is over.
+
+**Safety.** The names come from a link, which anyone can craft. They are put on the page with `textContent`, never `innerHTML`, so a "name" like `<img onerror=…>` shows as plain text instead of running code.
+
+**Pasting a link in the same tab** only changes the part after `#`, which doesn't reload the page. A `hashchange` listener reloads it, so the right screen shows.
+
 ## Building and running
 
 One script builds the wasm, and any static file server can serve the page. The only extra tooling is Rust's wasm target, no `wasm-pack` or `trunk`.
@@ -178,5 +208,5 @@ What makes the crate build for wasm, in `Cargo.toml`:
 Steps 3–5 turn the working Rust pieces into the actual app. Each step is reviewed before the next one starts.
 
 - [x] **Step 3: organizer view.** Cards fly into the sack, the sack shakes, and 7 personal links pop up with copy and share buttons.
-- [ ] **Step 4: recipient view.** When the page opens with a `#code`, the person taps "Trek een lootje!" three times: the sack wiggles, a paper flies out and unfolds to show a name. Then pepernoten and confetti rain down. A broken link gets a clear message.
+- [x] **Step 4: recipient view.** Tap "Trek een lootje!" three times: the sack wiggles, a paper flies out and flips to show a name, then pepernoten and confetti rain down.
 - [ ] **Step 5: online.** Host the `web/` folder on GitHub Pages. You do the commits and the push yourself; I only suggest the commands.
