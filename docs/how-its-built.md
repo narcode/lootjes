@@ -195,7 +195,7 @@ node scripts/try-wasm.mjs       # try the exports without a browser
 python3 -m http.server -d web 8000
 ```
 
-Then open http://localhost:8000. A browser will not load a `.wasm` file from `file://`, so a local server is needed.
+Then open <http://localhost:8000>. A browser will not load a `.wasm` file from `file://`, so a local server is needed.
 
 What makes the crate build for wasm, in `Cargo.toml`:
 

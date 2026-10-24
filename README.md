@@ -13,4 +13,6 @@ rustup target add wasm32-unknown-unknown   # once
 python3 -m http.server -d web 8000         # open http://localhost:8000
 ```
 
-How it's built: [docs/how-its-built.md](docs/how-its-built.md)
+How it's built: [docs/how-its-built.md](https://github.com/narcode/lootjes/blob/main/docs/how-its-built.md)
+
+Try it: [narcode.github.io/lootjes](https://narcode.github.io/lootjes/)
