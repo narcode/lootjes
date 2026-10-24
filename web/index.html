@@ -92,7 +92,7 @@
     <h2 id="hello"></h2>
     <p id="intro"></p>
     <div id="papers" class="papers"></div>
-    <button class="big" id="pull">Trek een lootje!</button>
+    <button class="big" id="pull">Trek je lootjes!</button>
     <p id="outro" class="outro" hidden>Veel plezier met de cadeautjes, en vergeet de gedichten niet!</p>
   </section>
 </main>
@@ -157,30 +157,39 @@ function shakeSack(times = 6) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, reducedMotion ? 0 : ms));
 
-// A folded paper flies out of the sack into the next free slot, waits a moment, then flips.
-async function pullPaper(name) {
-  const paper = document.createElement("div");
-  paper.className = "paper";
-  paper.innerHTML = `<div class="inner"><div class="face front">?</div><div class="face back"></div></div>`;
-  paper.querySelector(".back").textContent = name; // textContent, never innerHTML: the name comes from a link
-  $("papers").append(paper);
+// All papers fly out of the sack one right after another, wait a moment, then flip one by one.
+async function pullPapers(names) {
+  // Add every paper at once, so the layout (and each paper's final spot) doesn't shift mid-flight.
+  const papers = names.map((name) => {
+    const paper = document.createElement("div");
+    paper.className = "paper";
+    paper.innerHTML = `<div class="inner"><div class="face front">?</div><div class="face back"></div></div>`;
+    paper.querySelector(".back").textContent = name; // textContent, never innerHTML: the name comes from a link
+    $("papers").append(paper);
+    return paper;
+  });
 
-  // "FLIP" technique: the paper already sits in its final spot. Measure where that is,
+  // "FLIP" technique: each paper already sits in its final spot. Measure where that is,
   // start the animation offset back at the sack, and play it towards "none" (= its real spot).
+  // fill "both" keeps a paper invisible at the sack while it waits for its delay.
   const sack = $("sack").getBoundingClientRect();
-  const box = paper.getBoundingClientRect();
-  const dx = sack.left + sack.width / 2 - (box.left + box.width / 2);
-  const dy = sack.top + sack.height * 0.25 - (box.top + box.height / 2);
-  await animate(paper, [
-    { transform: `translate(${dx}px, ${dy}px) scale(0.1) rotate(${rand(-90, 90)}deg)`, opacity: 0 },
-    { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 80}px) scale(0.9) rotate(${rand(-20, 20)}deg)`, opacity: 1, offset: 0.5 },
-    { transform: "none", opacity: 1 },
-  ], { duration: 900, easing: "ease-out" });
+  await Promise.all(papers.map((paper, i) => {
+    const box = paper.getBoundingClientRect();
+    const dx = sack.left + sack.width / 2 - (box.left + box.width / 2);
+    const dy = sack.top + sack.height * 0.25 - (box.top + box.height / 2);
+    return animate(paper, [
+      { transform: `translate(${dx}px, ${dy}px) scale(0.1) rotate(${rand(-90, 90)}deg)`, opacity: 0 },
+      { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 80}px) scale(0.9) rotate(${rand(-20, 20)}deg)`, opacity: 1, offset: 0.5 },
+      { transform: "none", opacity: 1 },
+    ], { duration: 900, delay: i * 250, easing: "ease-out", fill: "both" });
+  }));
 
   await sleep(400); // suspense…
-  const inner = paper.querySelector(".inner");
-  await animate(inner, [{ transform: "rotateY(0)" }, { transform: "rotateY(180deg)" }], { duration: 700 });
-  inner.classList.add("flipped"); // the final state, also when animations are off
+  await Promise.all(papers.map((paper, i) => {
+    const inner = paper.querySelector(".inner");
+    return animate(inner, [{ transform: "rotateY(0)" }, { transform: "rotateY(180deg)" }], { duration: 700, delay: i * 450 })
+      .then(() => inner.classList.add("flipped")); // the final state, also when animations are off
+  }));
 }
 
 // Pepernoten and confetti fall from the top of the screen.
@@ -284,20 +293,13 @@ function renderRecipient(code) {
   $("hello").textContent = `Hoi ${name}!`;
   $("intro").textContent = `Sinterklaas heeft ${picks.length} lootjes voor je in de zak.`;
 
-  let drawn = 0;
   $("pull").onclick = async () => {
     $("pull").disabled = true;
-    await shakeSack(3);
-    await pullPaper(picks[drawn]);
-    drawn++;
-    if (drawn < picks.length) {
-      $("pull").textContent = "Nog een lootje!";
-      $("pull").disabled = false;
-    } else {
-      $("pull").hidden = true;
-      $("outro").hidden = false;
-      rain();
-    }
+    await shakeSack(4);
+    $("pull").hidden = true;
+    await pullPapers(picks);
+    $("outro").hidden = false;
+    rain();
   };
 }
 

@@ -144,19 +144,21 @@ The animation helpers use a few tricks:
 
 ## Step 4: recipient view, where the lootjes are drawn
 
-When the page opens with a `#code`, it decodes the ticket and shows "Hoi Anna!" with a "Trek een lootje!" button. Each tap shakes the sack, a folded paper flies out and lands in its slot, and after a short pause it flips over to show a name. After the last one, pepernoten and confetti rain down. A broken code shows "Oeps!" with a request to ask the organizer for the link again.
+When the page opens with a `#code`, it decodes the ticket and shows "Hoi Anna!" with a "Trek je lootjes!" button. One tap shakes the sack, all three folded papers fly out one right after another, and after a short pause they flip over one by one to show the names. Then pepernoten and confetti rain down. A broken code shows "Oeps!" with a request to ask the organizer for the link again.
 
 **The click sequence** reads like a film script again:
 
 ```js
-await shakeSack(3);
-await pullPaper(picks[drawn]); // fly out → pause → flip
-// after the last paper: hide the button, show the outro, rain()
+await shakeSack(4);
+await pullPapers(picks); // all fly out (staggered) → pause → flip one by one
+// then show the outro and rain()
 ```
 
-The button is disabled during the animation so a double tap can't pull two papers at once.
+The button is disabled as soon as it's tapped, so a double tap can't start the show twice.
 
-**The FLIP technique** (First, Last, Invert, Play) for the flying paper. The paper is added straight into its final slot in the layout, and the page measures where that is. The animation starts offset back at the sack (`translate(dx, dy) scale(0.1)`) and plays towards `transform: "none"`, which is its real spot. The browser's layout decides where the paper ends up, so there's no position to calculate by hand. With reduced motion on, the paper simply appears in place.
+**Staggering.** `pullPapers` starts the three flights together with `Promise.all`, each with `delay: i * 250`. The flips do the same with `delay: i * 450`. `fill: "both"` keeps a waiting paper invisible at the sack until its delay is over.
+
+**The FLIP technique** (First, Last, Invert, Play) for the flying papers. All three papers are added to the layout at once, so no paper's final spot shifts while another is still flying. The page measures where each one is. The animation starts offset back at the sack (`translate(dx, dy) scale(0.1)`) and plays towards `transform: "none"`, which is its real spot. The browser's layout decides where the paper ends up, so there's no position to calculate by hand. With reduced motion on, the paper simply appears in place.
 
 **The 3D flip** uses only CSS structure:
 
@@ -208,5 +210,5 @@ What makes the crate build for wasm, in `Cargo.toml`:
 Steps 3–5 turn the working Rust pieces into the actual app. Each step is reviewed before the next one starts.
 
 - [x] **Step 3: organizer view.** Cards fly into the sack, the sack shakes, and 7 personal links pop up with copy and share buttons.
-- [x] **Step 4: recipient view.** Tap "Trek een lootje!" three times: the sack wiggles, a paper flies out and flips to show a name, then pepernoten and confetti rain down.
+- [x] **Step 4: recipient view.** One tap on "Trek je lootjes!": the sack shakes, three papers fly out and flip one by one, then pepernoten and confetti rain down.
 - [ ] **Step 5: online.** Host the `web/` folder on GitHub Pages. You do the commits and the push yourself; I only suggest the commands.

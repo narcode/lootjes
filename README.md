@@ -5,7 +5,7 @@
 
 A small Sinterklaas lootjes app. Each of 7 people draws 3 names: nobody gets themselves, nobody gets a name twice, and everyone is drawn exactly 3 times. The draw runs in the browser as Rust compiled to WebAssembly. Every person gets a private link that carries only their own names, so there's no server and no database.
 
-Built step by step with an AI coding agent ([Claude Code](https://claude.com/claude-code)), as a way to learn how it works.
+Built step by step with an AI coding agent ([Claude Code](https://claude.com/claude-code))
 
 ```sh
 rustup target add wasm32-unknown-unknown   # once
