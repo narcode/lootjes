@@ -18,6 +18,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # Rust is preinstalled on GitHub's Ubuntu runners; only the wasm target is missing.
+      - run: rustup target add wasm32-unknown-unknown
+      - run: cargo test
+      - run: ./build.sh # builds web/lootjes.wasm, which is not in git
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

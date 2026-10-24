@@ -203,7 +203,17 @@ What makes the crate build for wasm, in `Cargo.toml`:
 - `#[unsafe(no_mangle)] pub extern "C" fn …`: keeps the function name as-is so JS can find it in `instance.exports`.
 - Release profile with `opt-level = "s"`, `lto = true` and `panic = "abort"` keeps the file small.
 
-`web/lootjes.wasm` is a build output and is listed in `.gitignore` for now. That changes in step 5, when the built file must be committed for GitHub Pages.
+`web/lootjes.wasm` is a build output and is listed in `.gitignore`. It is never committed; GitHub Actions builds it on every push (see step 5).
+
+## Step 5: publishing on GitHub Pages
+
+`.github/workflows/pages.yml` runs on every push to `main`. It installs the wasm target, runs `cargo test`, runs `./build.sh`, and uploads the `web/` folder to GitHub Pages. A failing test stops the deploy, so a broken draw never goes live.
+
+Git only holds source code. Committing `lootjes.wasm` would also work, but it means versioning a binary and remembering to rebuild before every commit; a forgotten rebuild silently deploys old code.
+
+One-time setup on GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**. The site then lives at `https://<user>.github.io/<repo>/`.
+
+Because the page loads files with relative paths (`./wasm.js`, `lootjes.wasm`) and builds links from `location.pathname`, it works under the `/<repo>/` subpath without any changes.
 
 ## What's next
 
@@ -211,4 +221,4 @@ Steps 3–5 turn the working Rust pieces into the actual app. Each step is revie
 
 - [x] **Step 3: organizer view.** Cards fly into the sack, the sack shakes, and 7 personal links pop up with copy and share buttons.
 - [x] **Step 4: recipient view.** One tap on "Trek je lootjes!": the sack shakes, three papers fly out and flip one by one, then pepernoten and confetti rain down.
-- [ ] **Step 5: online.** Host the `web/` folder on GitHub Pages. You do the commits and the push yourself; I only suggest the commands.
+- [x] **Step 5: online.** GitHub Actions builds the wasm and publishes `web/` to GitHub Pages on every push to `main`.
