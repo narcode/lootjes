@@ -223,7 +223,7 @@ The design: the page on GitHub Pages calls one AWS Lambda function, which reads 
 
 ### Wishlist step 1: the access check
 
-`lambda/access.mjs` and `lambda/handler.mjs` answer two questions: is this one of the links we sent, and what may this person do?
+`lambda/access.mjs` and `lambda/handler.mjs` check that a request comes from one of the links we sent. The ticket inside that link then decides what its holder may do.
 
 **Authentication.** The request carries the link code in its POST body. Lambda computes its SHA-256 hash and looks it up in a list of the 7 hashes of the links that were sent. Only the hashes are stored, so the configuration doesn't contain the draw. A code that passes is decoded with the same `lootjes.wasm` the page uses, so the Rust decoder stays the only one.
 
@@ -242,6 +242,61 @@ The lookup comes before the decode, so the decoder only ever sees codes we issue
 - The link code now acts as a password. It travels in the POST body, never in a URL, and is never logged.
 - Every bad request gets the same `403`, whatever was wrong with it, so a guesser learns nothing from the answer.
 - `createHandler` receives `decode` and `allowedHashes` as arguments. That is called dependency injection: the tests pass in the real wasm decoder and made-up tickets, so `node --test lambda/` runs without AWS.
+
+### Wishlist step 2: lists and claims
+
+`lambda/lists.mjs` holds the rules. All state is one JSON document:
+
+```json
+{ "lists": { "Bram": [{ "id": "…", "text": "Sokken", "claim": "9f2c…" }] } }
+```
+
+The request's `action` is `read`, `add`, `remove`, `claim` or `unclaim`. Every successful answer is the caller's complete view, so the page never has to fetch twice.
+
+**First claim wins.** S3 has no way to change part of an object, so every change is load, edit, save. Two people doing that at once could overwrite each other. `mutate` prevents it with optimistic locking:
+
+1. Load the object and remember its version (S3's ETag).
+2. Run the change on that copy.
+3. Save with `If-Match: <version>`. If someone saved in between, S3 refuses, and we start again from step 1.
+
+Rerunning the change on fresh data is what produces the right result. The second claimer's change now sees the first claim and is refused with `409 taken`. After 5 conflicts in a row it answers `503 busy`, and no data has been lost.
+
+**Claims don't say who.** `claim` stores an HMAC of the person's name and the item id, made with a secret only Lambda knows. Lambda can recompute it to answer "is this your claim?", but someone reading the JSON can't tell who it belongs to. A plain hash wouldn't do, because trying all 7 names would undo it. Including the item id means one person's claims can't be linked to each other.
+
+**What each person gets back.** `viewFor` copies each field by hand instead of returning the stored item, so a field is private unless it's listed there. The owner's items have only `id` and `text`. One test checks that the owner's response is byte-for-byte the same before and after a claim.
+
+**Removing a claimed item.** The buyer may already have bought it, so it can't just vanish. It's marked `removed` and stays visible to the claimer only. The owner sees exactly what they'd see after removing an unclaimed item, so removing something doesn't reveal that it was claimed. It's fully deleted once the claimer undoes their claim.
+
+**No `owner` field on `add` and `remove`.** They always use the ticket's own list, so a request to edit someone else's list can't even be written.
+
+### Wishlist step 3: on AWS
+
+`lambda/template.yaml` describes everything in one file: a private S3 bucket, the function, a role that can touch only `wishlists.json`, and a public Function URL. SAM turns that into a CloudFormation stack called `lootjes-wishlists` in `eu-central-1`.
+
+| File | Role |
+| --- | --- |
+| `lambda/index.mjs` | Entry point: connects the handler to the real wasm, config and S3 |
+| `lambda/s3-store.mjs` | `load` and `save` on S3, with `If-Match` |
+| `lambda/package.sh` | Collects what Lambda needs in `lambda/dist/` |
+| `lambda/template.yaml` | The AWS resources |
+| `scripts/make-lambda-config.mjs` | Turns the sent links into `lambda/config.json` |
+
+**The config.** `make-lambda-config.mjs` reads the links, checks that they form one complete draw, and writes the 7 hashes and a random claim secret to `lambda/config.json`. It prints only counts, so running it doesn't reveal the draw. The file is git-ignored and packaged inside the function, so the values don't appear as environment variables in the AWS console. Running the script again keeps the existing secret, because a new one would make every existing claim impossible to undo.
+
+**`AuthType: NONE`** means AWS lets every request reach the function, and `handler.mjs` does the checking. CORS only stops other websites' JavaScript in a browser; it doesn't stop scripts, which is why the code check is what actually protects the data. `ReservedConcurrentExecutions: 5` caps requests at 5 at a time, which also limits the bill if someone hammers the URL.
+
+**Deploying a change:**
+
+```sh
+./lambda/package.sh
+sam deploy --template-file lambda/template.yaml --stack-name lootjes-wishlists \
+  --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset \
+  --profile aws-sam --region eu-central-1
+```
+
+`sam validate --lint` reports `InvokedViaFunctionUrl` as unknown. The linter's bundled schema is behind: CloudFormation accepts the property and the stack deployed with it.
+
+**Removing it after Sinterklaas.** CloudFormation won't delete a bucket that still has objects, so empty it first with `aws s3 rm s3://<bucket>/wishlists.json`, then run `sam delete --stack-name lootjes-wishlists`, both with `--profile aws-sam --region eu-central-1`.
 
 ## What's next
 

@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Lootjes wishlists. One function in front of one private JSON object.
+
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  Api:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: dist/
+      Handler: index.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 10
+      # At most 5 requests at once, which also caps the bill if someone hammers the URL.
+      ReservedConcurrentExecutions: 5
+      Environment:
+        Variables:
+          BUCKET: !Ref Bucket
+      # The function can touch this one object and nothing else in the account.
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub "${Bucket.Arn}/wishlists.json"
+      # AuthType NONE: AWS lets every request through, and handler.mjs checks the link code.
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - https://narcode.github.io
+            - http://localhost:8000
+          AllowMethods: [POST]
+          AllowHeaders: [content-type]
+
+  # Function URLs also need this, limited here to calls that arrive through the URL.
+  ApiInvokeViaUrl:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref Api
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  ApiUrl:
+    Value: !GetAtt ApiUrl.FunctionUrl
+  BucketName:
+    Value: !Ref Bucket

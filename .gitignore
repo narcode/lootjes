@@ -1,2 +1,4 @@
 /target
 web/lootjes.wasm
+/lambda/config.json
+/lambda/dist
