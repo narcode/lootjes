@@ -215,6 +215,34 @@ One-time setup on GitHub: **Settings → Pages → Build and deployment → Sour
 
 Because the page loads files with relative paths (`./wasm.js`, `lootjes.wasm`) and builds links from `location.pathname`, it works under the `/<repo>/` subpath without any changes.
 
+## Wishlists
+
+People asked for a wishlist per person, and a way to mark an item as "I'm buying this". That needs state shared between people, which a link can't hold. The links that were already sent must keep working, so the ticket format stays exactly the same.
+
+The design: the page on GitHub Pages calls one AWS Lambda function, which reads and writes one private JSON object in S3. S3 alone can't check who is asking. A public table that only the 7 links could unlock would also leak the draw: anyone who knows the names could try all 120 possible draws for another person (6×5×4) offline and see which one fits.
+
+### Wishlist step 1: the access check
+
+`lambda/access.mjs` and `lambda/handler.mjs` answer two questions: is this one of the links we sent, and what may this person do?
+
+**Authentication.** The request carries the link code in its POST body. Lambda computes its SHA-256 hash and looks it up in a list of the 7 hashes of the links that were sent. Only the hashes are stored, so the configuration doesn't contain the draw. A code that passes is decoded with the same `lootjes.wasm` the page uses, so the Rust decoder stays the only one.
+
+The lookup comes before the decode, so the decoder only ever sees codes we issued. A forged code that decodes perfectly is still refused, because its hash isn't on the list.
+
+**Permissions** follow from the ticket, with no separate user table:
+
+| Whose list | Read | Edit | Claim (and see claims) |
+| --- | --- | --- | --- |
+| Your own | yes | yes | no |
+| One of your picks | yes | no | yes |
+| Anyone else | no | no | no |
+
+**Things worth knowing**
+
+- The link code now acts as a password. It travels in the POST body, never in a URL, and is never logged.
+- Every bad request gets the same `403`, whatever was wrong with it, so a guesser learns nothing from the answer.
+- `createHandler` receives `decode` and `allowedHashes` as arguments. That is called dependency injection: the tests pass in the real wasm decoder and made-up tickets, so `node --test lambda/` runs without AWS.
+
 ## What's next
 
 Steps 3–5 turn the working Rust pieces into the actual app. Each step is reviewed before the next one starts.
