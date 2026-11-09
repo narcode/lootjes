@@ -38,7 +38,7 @@
           background: #fff; border: 2px solid var(--gold); border-radius: 8px;
           box-shadow: 0 4px 10px rgba(0, 0, 0, .25); }
   /* Recipient: three paper slips that flip over to show a name. */
-  #recipient h2 { margin: 0 0 4px; color: var(--red); }
+  #recipient h2, #mine h2 { margin: 0 0 4px; color: var(--red); }
   .papers { display: flex; gap: 10px; min-height: 96px; margin: 16px 0 8px; }
   .paper { position: relative; z-index: 5; flex: 1; height: 90px; perspective: 600px; }
   .paper .inner { position: relative; height: 100%; transform-style: preserve-3d; }
@@ -57,6 +57,14 @@
                background: radial-gradient(circle at 35% 35%, #d39050, #8a4f1f); }
   .confetti { width: 8px; height: 12px; border-radius: 2px; }
   body { overflow-x: hidden; }
+
+  /* Wishlists. */
+  #mine { margin-top: 16px; }
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .hint { margin: 0 0 8px; font-size: 14px; opacity: .75; }
+  .wish { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .add { display: flex; gap: 8px; margin-top: 12px; }
+  .add input { flex: 1; min-width: 0; margin: 0; }
 
   [hidden] { display: none !important; }
 </style>
@@ -95,9 +103,25 @@
     <button class="big" id="pull">Trek je lootjes!</button>
     <p id="outro" class="outro" hidden>Veel plezier met de cadeautjes, en vergeet de gedichten niet!</p>
   </section>
+
+  <section id="mine" class="panel" hidden>
+    <h2>Jouw verlanglijstje</h2>
+    <p class="hint">Alleen de mensen die jou getrokken hebben, zien dit.</p>
+    <!-- Disabling the fieldset disables every button and input inside it while saving. -->
+    <fieldset id="mine-body">
+      <p id="mine-empty" class="hint">Er staat nog niets op.</p>
+      <div id="mine-items"></div>
+      <form id="mine-add" class="add">
+        <input id="mine-text" maxlength="300" placeholder="Wat wil je graag?" aria-label="Nieuwe wens">
+        <button class="small">Voeg toe</button>
+      </form>
+    </fieldset>
+    <p class="error" id="mine-error"></p>
+  </section>
 </main>
 
 <script type="module">
+import { api } from "./api.js";
 import { loadLootjes } from "./wasm.js";
 
 const N = 7, K = 3, KEY = "lootjes-v2";
@@ -292,6 +316,7 @@ function renderRecipient(code) {
   const [name, ...picks] = ticket;
   $("hello").textContent = `Hoi ${name}!`;
   $("intro").textContent = `Sinterklaas heeft ${picks.length} lootjes voor je in de zak.`;
+  initMine(code); // not awaited: the lootjes don't wait for the wishlist
 
   $("pull").onclick = async () => {
     $("pull").disabled = true;
@@ -300,6 +325,69 @@ function renderRecipient(code) {
     await pullPapers(picks);
     $("outro").hidden = false;
     rain();
+  };
+}
+
+// --- your own wishlist -------------------------------------------------------
+
+const WISH_ERRORS = {
+  text: "Die wens is te lang.",
+  full: "Je lijstje zit vol.",
+  gone: "Die wens bestaat niet meer. Ververs de pagina.",
+  busy: "Het is even druk. Probeer het nog eens.",
+  network: "Geen verbinding. Probeer het nog eens.",
+};
+const wishError = (error) => WISH_ERRORS[error] ?? "Er ging iets mis. Probeer het nog eens.";
+
+function renderMine(code, view) {
+  $("mine-empty").hidden = view.own.length > 0;
+  $("mine-items").replaceChildren(...view.own.map((item) => {
+    const row = document.createElement("div");
+    row.className = "row";
+
+    const text = document.createElement("span");
+    text.className = "wish";
+    text.textContent = item.text; // textContent, never innerHTML: wishes are typed by people
+
+    const remove = document.createElement("button");
+    remove.type = "button"; // a button inside a form would submit it otherwise
+    remove.className = "small";
+    remove.textContent = "Verwijder";
+    remove.onclick = () => changeMine(code, "remove", { id: item.id });
+
+    row.append(text, remove);
+    return row;
+  }));
+}
+
+// Every answer is the complete new view, so there's nothing to keep in sync here.
+async function changeMine(code, action, fields) {
+  $("mine-body").disabled = true;
+  const { view, error } = await api(code, action, fields);
+  $("mine-body").disabled = false;
+  $("mine-error").textContent = error ? wishError(error) : "";
+  if (view) renderMine(code, view);
+  return !error;
+}
+
+async function initMine(code) {
+  const { view, error } = await api(code, "read");
+  if (error === "forbidden") return; // a link from a newer draw: it has no lists
+
+  $("mine").hidden = false;
+  if (!view) {
+    $("mine-body").hidden = true;
+    $("mine-error").textContent = "Je lijstje kon niet geladen worden. Ververs de pagina om het opnieuw te proberen.";
+    return;
+  }
+  renderMine(code, view);
+
+  $("mine-add").onsubmit = async (event) => {
+    event.preventDefault();
+    const text = $("mine-text").value.trim();
+    if (!text) return;
+    if (await changeMine(code, "add", { text })) $("mine-text").value = ""; // on failure, keep what they typed
+    $("mine-text").focus();
   };
 }
 

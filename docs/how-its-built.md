@@ -298,6 +298,20 @@ sam deploy --template-file lambda/template.yaml --stack-name lootjes-wishlists \
 
 **Removing it after Sinterklaas.** CloudFormation won't delete a bucket that still has objects, so empty it first with `aws s3 rm s3://<bucket>/wishlists.json`, then run `sam delete --stack-name lootjes-wishlists`, both with `--profile aws-sam --region eu-central-1`.
 
+### Wishlist step 4: your own list
+
+Below the lootjes panel, a link's holder now gets a "Jouw verlanglijstje" panel to add and remove wishes. `web/api.js` is the only file that talks to Lambda, and `initMine` in `web/index.html` runs the panel.
+
+**The lootjes never wait for the wishlist.** `initMine(code)` is deliberately not awaited, and `api()` never throws: it returns `{ view }` or `{ error }`. If AWS is down, the panel shows a message and the reveal works exactly as before. A link that isn't on the list (a newer draw, for example) gets a `403`, and the panel simply stays hidden.
+
+**One render function.** Every Lambda answer is the complete new view, so `renderMine` redraws the list from it with `replaceChildren`. The page doesn't keep its own copy of the data that could drift out of sync.
+
+**`<fieldset disabled>`** disables every input and button inside it in one go. That is what stops a double tap from removing an item twice while a save is in progress.
+
+**Failed saves keep what you typed.** The input is only cleared when the save succeeded.
+
+Wishes are shown with `textContent`, for the same reason as names: they are typed by people, so `<img onerror=…>` has to stay plain text. `overflow-wrap: anywhere` makes long shop links wrap instead of widening the page.
+
 ## What's next
 
 Steps 3–5 turn the working Rust pieces into the actual app. Each step is reviewed before the next one starts.
