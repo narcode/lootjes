@@ -300,7 +300,7 @@ sam deploy --template-file lambda/template.yaml --stack-name lootjes-wishlists \
 
 ### Wishlist step 4: your own list
 
-Below the lootjes panel, a link's holder now gets a "Jouw verlanglijstje" panel to add and remove wishes. `web/api.js` is the only file that talks to Lambda, and `initMine` in `web/index.html` runs the panel.
+Below the lootjes panel, a link's holder now gets a "Jouw verlanglijstje" panel to add and remove wishes. `web/api.js` is the only file that talks to Lambda, and `initMine` in `web/index.html` sets up the panel.
 
 **The lootjes never wait for the wishlist.** `initMine(code)` is deliberately not awaited, and `api()` never throws: it returns `{ view }` or `{ error }`. If AWS is down, the panel shows a message and the reveal works exactly as before. A link that isn't on the list (a newer draw, for example) gets a `403`, and the panel simply stays hidden.
 
@@ -311,6 +311,25 @@ Below the lootjes panel, a link's holder now gets a "Jouw verlanglijstje" panel 
 **Failed saves keep what you typed.** The input is only cleared when the save succeeded.
 
 Wishes are shown with `textContent`, for the same reason as names: they are typed by people, so `<img onerror=…>` has to stay plain text. `overflow-wrap: anywhere` makes long shop links wrap instead of widening the page.
+
+### Wishlist step 5: your picks' lists and claiming
+
+After the reveal, a "Hun verlanglijstjes" panel shows the lists of the three people you drew, each wish with a button.
+
+**Nothing before the reveal.** `initPicks` only runs at the end of the pull animation. The names on those lists are the surprise, so the panel isn't filled in until then.
+
+**A small table decides each row.** `pickRow` turns an item's `claimed`, `mine` and `removed` flags into a note, a button label and an action:
+
+| Item | Note | Button |
+| --- | --- | --- |
+| Free | | Ik koop dit |
+| Claimed by someone else | Iemand koopt dit al | none |
+| Claimed by you | Jij koopt dit | Toch niet |
+| Claimed by you, then removed by the owner | Van het lijstje gehaald. Nog niet gekocht? | Laat los |
+
+**Out-of-date pages.** A page can show a wish as free after someone else has claimed it. Clicking then returns `409 taken`, or `404 gone` if the wish was removed. In both cases `change` fetches a fresh view, so the person sees the message and the correct list together.
+
+**Links in wishes.** `fillWish` splits the text on `https?://…` and builds real `<a>` elements for those parts, with `rel="noopener noreferrer"`. The rest stays plain text. Because the pattern only matches http and https, a wish like `javascript:alert(1)` can never become a link.
 
 ## What's next
 

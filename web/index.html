@@ -38,7 +38,7 @@
           background: #fff; border: 2px solid var(--gold); border-radius: 8px;
           box-shadow: 0 4px 10px rgba(0, 0, 0, .25); }
   /* Recipient: three paper slips that flip over to show a name. */
-  #recipient h2, #mine h2 { margin: 0 0 4px; color: var(--red); }
+  #recipient h2, #mine h2, #picks h2 { margin: 0 0 4px; color: var(--red); }
   .papers { display: flex; gap: 10px; min-height: 96px; margin: 16px 0 8px; }
   .paper { position: relative; z-index: 5; flex: 1; height: 90px; perspective: 600px; }
   .paper .inner { position: relative; height: 100%; transform-style: preserve-3d; }
@@ -59,7 +59,10 @@
   body { overflow-x: hidden; }
 
   /* Wishlists. */
-  #mine { margin-top: 16px; }
+  #mine, #picks { margin-top: 16px; }
+  #picks h3 { margin: 16px 0 0; color: var(--dark); }
+  .note { display: block; margin-top: 2px; font-size: 13px; font-weight: 600; color: var(--red); }
+  .taken .wish { opacity: .6; }
   fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   .hint { margin: 0 0 8px; font-size: 14px; opacity: .75; }
   .wish { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -102,6 +105,15 @@
     <div id="papers" class="papers"></div>
     <button class="big" id="pull">Trek je lootjes!</button>
     <p id="outro" class="outro" hidden>Veel plezier met de cadeautjes, en vergeet de gedichten niet!</p>
+  </section>
+
+  <section id="picks" class="panel" hidden>
+    <h2>Hun verlanglijstjes</h2>
+    <p class="hint">Anderen zien dat iets al gekocht wordt, maar niet door wie. De persoon zelf ziet niets.</p>
+    <fieldset id="picks-body">
+      <div id="picks-lists"></div>
+    </fieldset>
+    <p class="error" id="picks-error"></p>
   </section>
 
   <section id="mine" class="panel" hidden>
@@ -325,19 +337,35 @@ function renderRecipient(code) {
     await pullPapers(picks);
     $("outro").hidden = false;
     rain();
+    initPicks(code); // only now: the names on these lists are the surprise
   };
 }
 
-// --- your own wishlist -------------------------------------------------------
+// --- wishlists ----------------------------------------------------------------
 
 const WISH_ERRORS = {
   text: "Die wens is te lang.",
   full: "Je lijstje zit vol.",
-  gone: "Die wens bestaat niet meer. Ververs de pagina.",
+  gone: "Die wens bestaat niet meer.",
+  taken: "Iemand was je net voor!",
   busy: "Het is even druk. Probeer het nog eens.",
   network: "Geen verbinding. Probeer het nog eens.",
 };
 const wishError = (error) => WISH_ERRORS[error] ?? "Er ging iets mis. Probeer het nog eens.";
+
+// Shows a wish, with web addresses as links. Built from text nodes, never innerHTML, because
+// wishes are typed by people. Only http(s) can match, so a javascript: "link" stays plain text.
+function fillWish(element, text) {
+  element.append(...text.split(/(https?:\/\/\S+)/).map((part, i) => {
+    if (i % 2 === 0) return part; // split() puts the matched addresses at the odd positions
+    const link = document.createElement("a");
+    link.href = part;
+    link.textContent = part;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    return link;
+  }));
+}
 
 function renderMine(code, view) {
   $("mine-empty").hidden = view.own.length > 0;
@@ -347,27 +375,87 @@ function renderMine(code, view) {
 
     const text = document.createElement("span");
     text.className = "wish";
-    text.textContent = item.text; // textContent, never innerHTML: wishes are typed by people
+    fillWish(text, item.text);
 
     const remove = document.createElement("button");
     remove.type = "button"; // a button inside a form would submit it otherwise
     remove.className = "small";
     remove.textContent = "Verwijder";
-    remove.onclick = () => changeMine(code, "remove", { id: item.id });
+    remove.onclick = () => change("mine", code, "remove", { id: item.id });
 
     row.append(text, remove);
     return row;
   }));
 }
 
+// One wish on a pick's list: what it says and which button it gets.
+function pickRow(code, owner, item) {
+  const [note, label, action] =
+    !item.claimed ? [null, "Ik koop dit", "claim"]
+    : !item.mine ? ["Iemand koopt dit al", null, null]
+    : item.removed ? ["Van het lijstje gehaald. Nog niet gekocht?", "Laat los", "unclaim"]
+    : ["Jij koopt dit", "Toch niet", "unclaim"];
+
+  const row = document.createElement("div");
+  row.className = "row";
+  row.classList.toggle("taken", item.claimed && !item.mine);
+
+  const wish = document.createElement("span");
+  wish.className = "wish";
+  fillWish(wish, item.text);
+  if (note) {
+    const small = document.createElement("span");
+    small.className = "note";
+    small.textContent = note;
+    wish.append(small);
+  }
+  row.append(wish);
+
+  if (action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "small";
+    button.textContent = label;
+    button.onclick = () => change("picks", code, action, { owner, id: item.id });
+    row.append(button);
+  }
+  return row;
+}
+
+function renderPicks(code, view) {
+  $("picks-lists").replaceChildren(...view.picks.flatMap(({ name, items }) => {
+    const title = document.createElement("h3");
+    title.textContent = name;
+    if (items.length) return [title, ...items.map((item) => pickRow(code, name, item))];
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "Er staat nog niets op.";
+    return [title, empty];
+  }));
+}
+
+const RENDER = { mine: renderMine, picks: renderPicks };
+
 // Every answer is the complete new view, so there's nothing to keep in sync here.
-async function changeMine(code, action, fields) {
-  $("mine-body").disabled = true;
-  const { view, error } = await api(code, action, fields);
-  $("mine-body").disabled = false;
-  $("mine-error").textContent = error ? wishError(error) : "";
-  if (view) renderMine(code, view);
+async function change(panel, code, action, fields) {
+  $(`${panel}-body`).disabled = true;
+  let { view, error } = await api(code, action, fields);
+  // "taken" and "gone" mean this page was out of date, so fetch what's true now.
+  if (error === "taken" || error === "gone") ({ view } = await api(code, "read"));
+  $(`${panel}-body`).disabled = false;
+  $(`${panel}-error`).textContent = error ? wishError(error) : "";
+  if (view) RENDER[panel](code, view);
   return !error;
+}
+
+async function initPicks(code) {
+  const { view, error } = await api(code, "read");
+  if (error === "forbidden") return; // a link from a newer draw: it has no lists
+
+  $("picks").hidden = false;
+  if (view) return renderPicks(code, view);
+  $("picks-body").hidden = true;
+  $("picks-error").textContent = "De verlanglijstjes konden niet geladen worden. Ververs de pagina om het opnieuw te proberen.";
 }
 
 async function initMine(code) {
@@ -386,7 +474,7 @@ async function initMine(code) {
     event.preventDefault();
     const text = $("mine-text").value.trim();
     if (!text) return;
-    if (await changeMine(code, "add", { text })) $("mine-text").value = ""; // on failure, keep what they typed
+    if (await change("mine", code, "add", { text })) $("mine-text").value = ""; // on failure, keep what they typed
     $("mine-text").focus();
   };
 }
