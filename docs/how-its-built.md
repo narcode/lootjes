@@ -2,7 +2,7 @@
 
 ## Overview
 
-Lootjes is a static web page whose logic is written in Rust and compiled to WebAssembly. It has no server and no database. Seven people in different places each get a personal link that shows only their own three names.
+Lootjes is a static web page whose logic is written in Rust and compiled to WebAssembly. The draw needs no server and no database; the [wishlists](#wishlists), added later, use one small AWS Lambda function. Seven people in different places each get a personal link that shows only their own three names.
 
 The rules of the draw:
 
@@ -26,6 +26,8 @@ How the pieces fit:
 | `scripts/try-wasm.mjs` | Call the wasm from Node, no browser needed |
 | `web/index.html` | The user interface |
 | `build.sh` | Build the wasm and copy it into `web/` |
+| `web/api.js` | The page's connection to the wishlist backend |
+| `lambda/` | The wishlist backend, see [Wishlists](#wishlists) |
 
 Why personal links instead of saved state: the part of a URL after `#` is never sent to a server. A link like `https://…/#dygAGgR2KR4ADHc3CA8aZjcdDQ` carries the person's result inside itself, so the site can be plain static files.
 
@@ -192,6 +194,7 @@ Every build:
 cargo test                      # run the Rust tests natively
 ./build.sh                      # build web/lootjes.wasm
 node scripts/try-wasm.mjs       # try the exports without a browser
+node --test lambda/             # run the wishlist backend tests
 python3 -m http.server -d web 8000
 ```
 
@@ -331,6 +334,12 @@ After the reveal, a "Hun verlanglijstjes" panel shows the lists of the three peo
 
 **Links in wishes.** `fillWish` splits the text on `https?://…` and builds real `<a>` elements for those parts, with `rel="noopener noreferrer"`. The rest stays plain text. Because the pattern only matches http and https, a wish like `javascript:alert(1)` can never become a link.
 
+### Wishlist step 6: coming back later
+
+Wishes keep changing until pakjesavond, so people will open their link more than once. After the first reveal, `rememberRevealed` stores a flag in `localStorage` for that link. On the next visit the papers are added already flipped, using the same `flipped` class the animation ends with, and the lists load straight away.
+
+The flag is per link and per device. A new device or a private window just plays the show again. It only skips the animation, so it can't reveal anything: the names were already in the link.
+
 ## What's next
 
 Steps 3–5 turn the working Rust pieces into the actual app. Each step is reviewed before the next one starts.
@@ -338,3 +347,5 @@ Steps 3–5 turn the working Rust pieces into the actual app. Each step is revie
 - [x] **Step 3: organizer view.** Cards fly into the sack, the sack shakes, and 7 personal links pop up with copy and share buttons.
 - [x] **Step 4: recipient view.** One tap on "Trek je lootjes!": the sack shakes, three papers fly out and flip one by one, then pepernoten and confetti rain down.
 - [x] **Step 5: online.** GitHub Actions builds the wasm and publishes `web/` to GitHub Pages on every push to `main`.
+- [x] **Wishlists.** A list per person and anonymous "I'm buying this" claims, without changing the links that were sent.
+- [ ] **After 5 December.** Remove the AWS stack; the commands are under "Wishlist step 3".

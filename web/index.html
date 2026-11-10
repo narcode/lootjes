@@ -193,10 +193,8 @@ function shakeSack(times = 6) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, reducedMotion ? 0 : ms));
 
-// All papers fly out of the sack one right after another, wait a moment, then flip one by one.
-async function pullPapers(names) {
-  // Add every paper at once, so the layout (and each paper's final spot) doesn't shift mid-flight.
-  const papers = names.map((name) => {
+function addPapers(names) {
+  return names.map((name) => {
     const paper = document.createElement("div");
     paper.className = "paper";
     paper.innerHTML = `<div class="inner"><div class="face front">?</div><div class="face back"></div></div>`;
@@ -204,6 +202,12 @@ async function pullPapers(names) {
     $("papers").append(paper);
     return paper;
   });
+}
+
+// All papers fly out of the sack one right after another, wait a moment, then flip one by one.
+async function pullPapers(names) {
+  // Add every paper at once, so the layout (and each paper's final spot) doesn't shift mid-flight.
+  const papers = addPapers(names);
 
   // "FLIP" technique: each paper already sits in its final spot. Measure where that is,
   // start the animation offset back at the sack, and play it towards "none" (= its real spot).
@@ -330,6 +334,16 @@ function renderRecipient(code) {
   $("intro").textContent = `Sinterklaas heeft ${picks.length} lootjes voor je in de zak.`;
   initMine(code); // not awaited: the lootjes don't wait for the wishlist
 
+  // Already pulled on this device: skip the show and go straight to the names and lists.
+  if (wasRevealed(code)) {
+    $("intro").textContent = "Dit zijn jouw lootjes.";
+    $("pull").hidden = true;
+    for (const paper of addPapers(picks)) paper.querySelector(".inner").classList.add("flipped");
+    $("outro").hidden = false;
+    initPicks(code);
+    return;
+  }
+
   $("pull").onclick = async () => {
     $("pull").disabled = true;
     await shakeSack(4);
@@ -337,6 +351,7 @@ function renderRecipient(code) {
     await pullPapers(picks);
     $("outro").hidden = false;
     rain();
+    rememberRevealed(code);
     initPicks(code); // only now: the names on these lists are the surprise
   };
 }
@@ -487,6 +502,14 @@ function load() {
 }
 function save(state) {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+}
+
+// Remembered per link. Without storage (private windows) the show simply plays again.
+function wasRevealed(code) {
+  try { return localStorage.getItem(`lootjes-revealed:${code}`) === "1"; } catch { return false; }
+}
+function rememberRevealed(code) {
+  try { localStorage.setItem(`lootjes-revealed:${code}`, "1"); } catch {}
 }
 
 $("go").onclick = async () => {
